@@ -1867,7 +1867,7 @@ def bb_summary(d):
 
 with st.sidebar:
     render_html(f'<div class="pe-brand" style="display:block"><img class="pe-wide-logo" style="width:100%;max-width:230px" src="data:image/png;base64,{SYCOMMS_LOGO_B64}" alt="South Wales Comms">'
-                f'<div class="g" style="margin-top:6px">Pricebook · cost + 20%</div></div>')
+                f'</div>')
     # ── Appointment Type — affects commission rate ────────────────────────────
     APPT_RATES = {"Self Gen": 1000, "Base Deal": 600, "Acquisition": 500, "Telemarketer": 650}
     appt_type = st.selectbox(
@@ -11151,9 +11151,7 @@ if _show_dash:
     # ── Internal financials - collapsed by default, hidden from customer ────────
     pc = pat_class(pat)
     pat_warn = ""
-    if pat < 250:
-        pat_warn = "⚠️ Below £250 - must go to office"
-    elif pat < 500:
+    if pat < 500:
         pat_warn = "⚠️ Low PAT - consider manager review"
 
     if st.session_state.admin_unlocked:
