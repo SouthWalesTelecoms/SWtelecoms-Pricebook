@@ -1,0 +1,46 @@
+name: Keep Streamlit app awake
+
+on:
+  schedule:
+    - cron: "0 */4 * * *"   # every 4 hours (UTC)
+  workflow_dispatch:         # lets you run it manually from the Actions tab
+
+jobs:
+  wake:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Playwright (headless Chrome)
+        run: |
+          npm init -y > /dev/null
+          npm install playwright@1
+          npx playwright install --with-deps chromium
+
+      - name: Visit app and wake it if asleep
+        env:
+          APP_URL: https://swtelecoms-pricebook.streamlit.app/
+        run: |
+          cat > wake.js <<'EOF'
+          const { chromium } = require('playwright');
+          (async () => {
+            const browser = await chromium.launch();
+            const page = await browser.newPage();
+            await page.goto(process.env.APP_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
+            await page.waitForTimeout(5000);
+            const btn = page.getByRole('button', { name: /get this app back up/i });
+            if (await btn.count()) {
+              console.log('App was asleep - waking it up');
+              await btn.first().click();
+              await page.waitForTimeout(60000);
+            } else {
+              console.log('App is awake - visit registered');
+              await page.waitForTimeout(15000);
+            }
+            await browser.close();
+          })();
+          EOF
+          node wake.js
