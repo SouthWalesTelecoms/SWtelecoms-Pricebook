@@ -1,0 +1,9 @@
+streamlit==1.45.1
+fpdf2==2.9.0
+pypdf>=5.0
+pillow
+pandas
+numpy<2.3
+requests
+streamlit-drawable-canvas==0.9.3
+openpyxl
