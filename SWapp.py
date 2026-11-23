@@ -9496,7 +9496,7 @@ with tab5:
                     st.session_state.get("c_desired_rental") or base_rental, 2)
             desired_rental_input = st.number_input(
                 "Desired Lease Rental (£/mo)",
-                min_value=0.01,
+                min_value=0.0,
                 step=1.0,
                 key="c_desired_rental_input",
                 help=f"Calculated rental: £{base_rental:.2f}. "
