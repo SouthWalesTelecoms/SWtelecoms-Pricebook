@@ -2242,6 +2242,9 @@ with st.sidebar:
         if float(_v or 0.0) != float(st.session_state.get(applied_key) or 0.0):
             st.caption(":orange[Not applied yet - press Apply (or Clear to go back to the calculated price).]")
 
+    _target_box("Call Scope target rental", "Call Scope target (£/mo)", "cs_target_box", "cs_target_rental", 5.0,
+                "Using standard price",
+                "Type the monthly Call Scope price you want, then press Apply. Higher than standard earns more profit; lower is held at or above our buy price. Clear goes back to the standard price.", "cs")
     _cs_units_ph = st.container(key="cs_units_caption")
     _target_box("Air conditioning target rental", "Air conditioning target (£/mo)", "ac_target_box", "ac_desired_rental", 5.0,
                 "Using calculated rental",
@@ -8118,9 +8121,19 @@ if cs_order_rows:
         return round(_hi, 2), ""
     _cs_tgt = float(st.session_state.get("cs_target_rental") or 0)
     if _cs_tgt > 0:
-        _dd, cs_target_note = _cs_solve(_cs_tgt)
-        if _dd is not None:
-            cs_disc_eff = _dd
+        if _disc_tot > 0 and _cs_tgt > _cs_total_at(0.0):
+            # a target ABOVE the standard price: the Call Scope prices are raised in proportion to reach it
+            _k_up = (_cs_tgt - _fix_tot) / _disc_tot
+            for _m in _cs_mods:
+                if _m["discountable"]:
+                    _m["rrp"] = round(_m["rrp"] * _k_up, 2)
+            _cs_cfgx["modules"] = [{k: v for k, v in m.items() if k != "qty"} for m in _cs_mods]
+            _disc_tot = sum(m["rrp"] * m["qty"] for m in _cs_mods if m["discountable"])
+            cs_target_note = "target price above standard"
+        else:
+            _dd, cs_target_note = _cs_solve(_cs_tgt)
+            if _dd is not None:
+                cs_disc_eff = _dd
     cs_auto_monthly = _cs_total_at(cs_disc_eff)     # before any admin override
     _cs_ov = _cp_saved().get("cs")
     if _cs_ov is not None:
