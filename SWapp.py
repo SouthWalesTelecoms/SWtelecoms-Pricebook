@@ -6945,22 +6945,10 @@ def n_packs():
 def build_combined(tele_bytes, sg=None):
     """Telephony pack first (if there is one), then Call Scope, then SteadyTemp - one file for sending or signing."""
     parts = [tele_bytes if _tele_any else None]
-    _shs = ({"bytes": sg.get("sig_bytes"), "name": sg.get("name"), "company": sg.get("company"), "ts": sg.get("ts")}
-            if (sg and sg.get("sig_bytes")) else None)
-    if _tele_any and is_lease and float(hw_monthly_spread or 0) > 0:      # the Shire hire agreement for the telephone lease
-        try:
-            parts.append(ac_build_shire(_shs, tel_shire_values(_shs)))
-        except Exception:
-            pass
     if cs_active and not cs_crm_missing:
         parts.append(build_callscope_pack(_sign_cs(sg)))
     if ac_active:
         parts.append(build_steadytemp_pack(_sign_st(sg)))
-        if not ac_quote["is_cash"]:                                         # and the one for the air-conditioning lease
-            try:
-                parts.append(ac_build_shire(_shs))
-            except Exception:
-                pass
     return merge_pdfs(*parts)
 
 
@@ -10202,7 +10190,7 @@ with tab6:
         # ── Step 4: signed pack ───────────────────────────────────────────────
         st.markdown("#### Step 4 - Download the " + ("combined " if _two else "") + "signed pack")
         st.caption("The signature, name and date are filled in everywhere they belong - apart from the single 'Agreement to proceed' box on the proposal, "
-                   "which is left blank for Zoho Sign." + (" On a lease deal the completed, signed Shire Leasing hire agreement is included at the back of the telephony pack." if is_lease else ""))
+                   "which is left blank for Zoho Sign.")
         if cs_crm_missing:
             st.warning("Call Scope is held back from the pack until the customer's CRM is entered in the Call Scope card.")
         _signed_bytes = None
@@ -10213,7 +10201,7 @@ with tab6:
                                           curr_total=current_total, curr_bb=current_bb, curr_system=current_system,
                                           curr_calls=current_calls, curr_mobile=current_mobile)
             try:
-                _main = build_combined(_signed_bytes, _sgx) if (_two or not _tele_any or is_lease) else _signed_bytes
+                _main = build_combined(_signed_bytes, _sgx) if (_two or not _tele_any) else _signed_bytes
                 st.session_state["_signed_pdf_bytes"]    = _main
                 st.session_state["_signed_pdf_filename"] = f"{'Combined_Pack' if _two else 'SWComms'}_{safe}_SIGNED_{date.today()}.pdf"
                 st.download_button("✅ Download the " + ("COMBINED " if _two else "") + "signed pack", data=_main,
@@ -10281,25 +10269,6 @@ with tab6:
                         st.caption("To sign it here instead, add the signature and name on the left.")
                 except Exception as _cse:
                     st.error(f"Couldn't build the Call Scope pack: {_cse}")
-
-        if is_lease and float(hw_monthly_spread or 0) > 0:
-            st.divider()
-            st.markdown("**Shire Leasing hire agreement (the finance company's form for the telephone system)**")
-            st.caption("Completed automatically from the customer details and the lease rental. Signed with the same signature.")
-            _tbk_miss = [n for n, v in (("bank name", bank_name), ("account number", acc_no), ("sort code", sort_code)) if not v]
-            if _tbk_miss:
-                st.caption("Direct Debit details still missing in the left-hand bar (" + ", ".join(_tbk_miss) + ") - those boxes stay blank on the form.")
-            try:
-                st.download_button("📥 Shire agreement - blank signature (for Zoho Sign)", data=ac_build_shire(None, tel_shire_values(None)),
-                                   file_name=f"{_CO_FILE.split('_')[0]}_{safe}_Shire_Agreement_{date.today()}.pdf", mime="application/pdf",
-                                   use_container_width=True, key="dl_tel_shire_blank")
-                if sig_bytes and sig_name:
-                    _tsg = {"bytes": sig_bytes, "name": sig_name, "company": comp_name or "", "ts": _ts}
-                    st.download_button("✅ Shire agreement - signed now", data=ac_build_shire(_tsg, tel_shire_values(_tsg)),
-                                       file_name=f"{_CO_FILE.split('_')[0]}_{safe}_Shire_Agreement_SIGNED_{date.today()}.pdf", mime="application/pdf",
-                                       use_container_width=True, type="primary", key="dl_tel_shire_signed")
-            except Exception as _tse:
-                st.error(f"Couldn't build the Shire agreement: {_tse}")
 
         if ac_active:
             st.divider()
