@@ -1688,6 +1688,9 @@ def zs_text_tag(pdf, width_mm, size=20):
         tag = tag[:-2] + " }}"
     return tag
 
+def _bbx_slug(p):
+    return re.sub(r"[^A-Za-z0-9]+", "_", str(p)).strip("_")
+
 def zs_tag_over(pdf, x, y, w, kind="S", size=16):
     """Draw an invisible (white) Zoho Sign text tag - S signature, I initials, SD date signed - at x,y about w mm wide.
     Font, colour, position and page-break setting are put back afterwards, so the page layout doesn't change."""
@@ -1796,12 +1799,20 @@ def zoho_order_data():
             except Exception:
                 pass
     _svc = g.get("svc") or {}
-    bb = []
+    _site = str(G("q_address") or "").replace("\n", ", ").strip()
+    bb, bb_bill = [], []
     if float(_svc.get("bb_sell", 0) or 0) > 0:
-        bb.append(f"{g.get('bb_provider', '')} {g.get('bb_package', '')}".strip())
+        _bbp = g.get("bb_provider", "")
+        if _bbp != "None / Customer Supplied" and float(_svc.get("bb1_sell", 0) or 0) > 0:
+            bb.append(f"{_bbp} {g.get('bb_package', '')} - main site".strip() + (f" ({_site})" if _site else ""))
+            bb_bill.append(f"  Main line - {_bbp} {g.get('bb_package', '')} (main site): GBP {float(_svc.get('bb1_sell') or 0):,.2f}/mo")
         try:
-            for _xp, _xq, _xs in extra_bb_display():
-                bb.append(f"{_xq} x {g.get('bb_provider', '')} {_xp} (additional)")
+            _each = {p: (sv / q if q else 0.0) for p, q, sv in extra_bb_display()}
+            for _xp, _xn, _xa in extra_bb_sites():
+                _where = _xa.replace("\n", ", ") if _xa else "main site" + (f" ({_site})" if _site else "")
+                bb.append(f"{_bbp} {_xp} - additional line {_xn} - install at: {_where}")
+                bb_bill.append(f"  Additional line {_xn} - {_bbp} {_xp} ({_xa.replace(chr(10), ', ') if _xa else 'main site'}): "
+                               f"GBP {_each.get(_xp, 0.0):,.2f}/mo")
         except Exception:
             pass
     try:
@@ -1811,7 +1822,17 @@ def zoho_order_data():
     ports = [str(n) for n in (loa.get("numbers") or [])] if loa.get("on") else []
     try:
         rows = build_comparison_rows()
-        lines = [f"{l}: GBP {nv:,.2f}/mo" for l, cv, nv in rows if nv > 0.004]
+        lines = []
+        for l, cv, nv in rows:
+            if nv <= 0.004:
+                continue
+            lines.append(f"{l}: GBP {nv:,.2f}/mo")
+            _nlic = int(g.get("total_voice_channels") or 0)
+            if l == "User Licences" and _nlic > 0:
+                _per = float(_svc.get("lic_monthly", 0) or 0) / _nlic
+                lines.append(f"  {_nlic} x User / Voice Licence @ GBP {_per:,.2f}/mo each")
+            if l == "Broadband" and bb_bill:
+                lines += bb_bill
     except Exception:
         lines = []
     try:
@@ -1899,7 +1920,7 @@ def _zoho_deal_description(d):
            + (f" <{d['email']}>" if d['email'] else ""),
            f"Monthly: GBP {d['monthly']:,.2f} + VAT over {d['term_months']} months ({d['payment']})"
            + (f" | Upfront: GBP {d['upfront']:,.2f} + VAT" if d['upfront'] else "")]
-    if d["monthly_lines"]: out += ["", "Monthly charges:"] + [f"- {x}" for x in d["monthly_lines"]]
+    if d["monthly_lines"]: out += ["", "Monthly charges:"] + [("    " + x.strip()) if x.startswith("  ") else f"- {x}" for x in d["monthly_lines"]]
     if d["hardware"]: out += ["", "Hardware:"] + [f"- {x}" for x in d["hardware"]]
     if d["broadband"]: out += ["", "Broadband:"] + [f"- {x}" for x in d["broadband"]]
     if d["ports"]: out += ["", "Numbers to port" + (f" (from {d['port_provider']})" if d["port_provider"] else "") + ":"] + [f"- {x}" for x in d["ports"]]
@@ -2470,7 +2491,14 @@ ZOHO_SIGNED_FN = r'''string standalone.__FN__(String request_id)
 			body2 = body2 + "<br>Billing email: " + ifnull(data.get("billing_email"),"") + "<br><br>";
 			for each m in mlines
 			{
-				body2 = body2 + "- " + m + "<br>";
+				if(m.startsWith("  "))
+				{
+					body2 = body2 + "&nbsp;&nbsp;&nbsp;&nbsp;" + m.trim() + "<br>";
+				}
+				else
+				{
+					body2 = body2 + "- " + m + "<br>";
+				}
 			}
 			if(bnotes.size() > 0)
 			{
@@ -3213,6 +3241,13 @@ with st.sidebar:
                                      key=f"bb_extra_{_p}")
                 if _q > 0:
                     extra_bb_lines[_p] = int(_q)
+            if extra_bb_lines:
+                st.markdown("**Installation address for each additional line**")
+                st.caption("Leave a box blank if that line goes in at the main site address.")
+                for _p, _q in extra_bb_lines.items():
+                    for _i in range(int(_q)):
+                        st.text_area(f"{_p} - line {_i + 1}", key=f"q_bbx_addr_{_bbx_slug(_p)}_{_i}", height=68,
+                                     placeholder="Blank = main site. Otherwise the full installation address, with postcode")
     extra_bb_count  = sum(extra_bb_lines.values())
     # Legacy aliases so any older references stay safe
     second_fttp     = extra_bb_count > 0
@@ -9037,6 +9072,14 @@ def extra_bb_display():
         _line_list = _x_list(p) * q
         _rows.append((p, q, round(_line_list * _ratio, 2)))
     return _rows
+
+def extra_bb_sites():
+    """[(package, line_no, install address or '')] for every additional broadband line ('' = main site)."""
+    out = []
+    for p, q in extra_bb_lines.items():
+        for i in range(int(q)):
+            out.append((p, i + 1, str(st.session_state.get(f"q_bbx_addr_{_bbx_slug(p)}_{i}") or "").strip()))
+    return out
 
 def extra_bb_install_total():
     return sum(BROADBAND[bb_provider][p]["install"] * q for p, q in extra_bb_lines.items())
