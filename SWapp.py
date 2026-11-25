@@ -179,7 +179,8 @@ _APP_CSS = """
 html,body,[class*="css"],.stApp,button,input,textarea,select{font-family:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif!important}
 .stApp{background:radial-gradient(1200px 500px at 85% -10%,rgba(__RGB__,.08),transparent 60%),radial-gradient(900px 500px at 10% -20%,rgba(__RGB__,.06),transparent 60%),var(--bg)}
 [data-testid="stHeader"]{background:transparent}[data-testid="stDecoration"]{display:none}footer{visibility:hidden}[class*="viewerBadge"],[class*="_profileContainer"],[class*="_profilePreview"],a[href*="github.com/sammyatt2010"],[data-testid="appCreatorAvatar"],[data-testid="stAppDeployButton"]{display:none!important}h1>div>a,h2>div>a,h3>div>a,h4>div>a{display:none!important}[class*="viewerBadge"],[data-testid="stAppViewerBadge"],[class*="_profileContainer"],a[href*="github.com/sammyatt2010-hub"],a[href*="streamlit.io/cloud"]{display:none!important}
-.block-container{padding-top:1.6rem!important;padding-bottom:3rem!important;max-width:1500px}
+html{font-size:14.5px}
+.block-container{padding-top:1.6rem!important;padding-bottom:3rem!important;padding-left:2.2rem!important;padding-right:2.2rem!important;max-width:1600px}
 [data-testid="stSidebar"]{background:linear-gradient(180deg,#0D1322 0%,#0A0E1A 100%);border-right:1px solid var(--border)}
 [data-testid="stSidebar"] h3{font-size:.78rem!important;font-weight:700!important;letter-spacing:.08em;text-transform:uppercase;color:var(--accent-2)!important;border-bottom:1px solid var(--border);padding-bottom:.4rem;margin-top:1.1rem!important}
 [data-testid="stWidgetLabel"] p{font-size:.76rem!important;font-weight:600!important;color:var(--muted)!important;text-transform:uppercase;letter-spacing:.06em}
@@ -11242,44 +11243,51 @@ with tab6:
                 if not CANVAS_OK:
                     st.warning("Drawing pad unavailable. Please use Upload photo instead.")
                 else:
-                    with st.container(border=True):
-                        st.caption("Draw with mouse, finger or stylus. Toolbar (top-right of box) to undo/clear.")
-                        # the drawing pad sometimes shows blank the first time it appears - so it is drawn once, then re-mounted fresh
-                        _cv_key = "sig_canvas_" + str(st.session_state.get("_cv_n", 0))
-                        try:
-                            canvas_result = st_canvas(
-                                fill_color="rgba(0,0,0,0)",
-                                stroke_width=3,
-                                stroke_color="#000000",
-                                background_color="#EAF4FB",
-                                update_streamlit=True,
-                                height=180,
-                                width=510,
-                                drawing_mode="freedraw",
-                                display_toolbar=True,
-                                key=_cv_key,
-                            )
-                        except TypeError:
-                            canvas_result = st_canvas(
-                                fill_color="rgba(0,0,0,0)",
-                                stroke_width=3,
-                                stroke_color="#000000",
-                                background_color="#EAF4FB",
-                                update_streamlit=True,
-                                height=180,
-                                width=510,
-                                drawing_mode="freedraw",
-                                key=_cv_key,
-                            )
-                    if not st.session_state.get("_cv_primed"):
-                        st.session_state["_cv_primed"] = True
-                        st.session_state["_cv_n"] = st.session_state.get("_cv_n", 0) + 1
-                        st.rerun()
+                    # The pad is opened with a button: Streamlit builds this tab in the background, and a pad set up while
+                    # the tab is hidden comes up blank. Opened here, it is set up while the consultant is looking at it.
+                    canvas_result = None
+                    if not st.session_state.get("_sig_pad_open"):
+                        if st.button("✍️ Open the signature pad", type="primary", use_container_width=True, key="btn_open_pad"):
+                            st.session_state["_sig_pad_open"] = True
+                            st.session_state["_cv_n"] = st.session_state.get("_cv_n", 0) + 1
+                            st.rerun()
+                    else:
+                        with st.container(border=True):
+                            st.caption("Draw with mouse, finger or stylus. Toolbar (top-right of box) to undo/clear.")
+                            _cv_key = "sig_canvas_" + str(st.session_state.get("_cv_n", 0))
+                            try:
+                                canvas_result = st_canvas(
+                                    fill_color="rgba(0,0,0,0)",
+                                    stroke_width=3,
+                                    stroke_color="#000000",
+                                    background_color="#EAF4FB",
+                                    update_streamlit=True,
+                                    height=180,
+                                    width=510,
+                                    drawing_mode="freedraw",
+                                    display_toolbar=True,
+                                    key=_cv_key,
+                                )
+                            except TypeError:
+                                canvas_result = st_canvas(
+                                    fill_color="rgba(0,0,0,0)",
+                                    stroke_width=3,
+                                    stroke_color="#000000",
+                                    background_color="#EAF4FB",
+                                    update_streamlit=True,
+                                    height=180,
+                                    width=510,
+                                    drawing_mode="freedraw",
+                                    key=_cv_key,
+                                )
+                        if st.button("↻ Pad looks blank? Reload it", key="btn_reload_pad"):
+                            st.session_state["_cv_n"] = st.session_state.get("_cv_n", 0) + 1
+                            st.rerun()
                     # Explicit save button - more reliable than auto-detect
                     _btn_col, _clr_col = st.columns(2)
                     with _btn_col:
                         if st.button("✅ Save Signature", use_container_width=True,
-                                     type="primary", key="btn_save_sig"):
+                                     type="primary", key="btn_save_sig", disabled=not st.session_state.get("_sig_pad_open")):
                             try:
                                 _img_data = canvas_result.image_data if canvas_result else None
                                 if _img_data is not None:
