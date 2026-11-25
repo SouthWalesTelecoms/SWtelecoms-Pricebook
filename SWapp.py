@@ -1799,6 +1799,25 @@ def _sig_png_from_canvas(img_data):
     _PILImage.fromarray(_arr.astype("uint8"), "RGB").save(buf, format="PNG")
     return buf.getvalue()
 
+def _hw_sold_as():
+    """How the phone system / hardware was sold, for the billing ticket: lease, in-house rental or upfront, with the term."""
+    g = globals()
+    try:
+        term = int(g.get("lease_term") or 0)
+    except Exception:
+        term = 0
+    yrs = f" ({term // 12} years)" if term and term % 12 == 0 else ""
+    if g.get("is_lease"):
+        funder = "Shire Leasing"     # the telephony finance provider on the agreement pack
+        return (f"Sold as: HARDWARE LEASE over {term} months{yrs} - the lease rental is billed by {funder}, "
+                "not on our bill run")
+    if g.get("is_inhouse"):
+        return (f"Sold as: IN-HOUSE SYSTEM RENTAL over {term} months{yrs} - we bill the system rental monthly "
+                f"(upfront price GBP {float(g.get('inhouse_price') or 0):,.2f} spread over the term)")
+    return (f"Sold as: UPFRONT PURCHASE - GBP {float(g.get('upfront') or 0):,.2f} + VAT invoiced once; "
+            f"services contract {term} months{yrs}" if term else
+            f"Sold as: UPFRONT PURCHASE - GBP {float(g.get('upfront') or 0):,.2f} + VAT invoiced once")
+
 def zoho_order_data():
     """Everything the CRM function needs to open the account, the Legal Contract and the onboarding tickets.
     Read from the live quote (called from the Sign & Send tab, after every figure has been worked out)."""
@@ -1841,12 +1860,17 @@ def zoho_order_data():
             if nv <= 0.004:
                 continue
             lines.append(f"{l}: GBP {nv:,.2f}/mo")
+            if l == "Phone System / Hardware":
+                lines.append("  " + _hw_sold_as())
             _nlic = int(g.get("total_voice_channels") or 0)
             if l == "User Licences" and _nlic > 0:
                 _per = float(_svc.get("lic_monthly", 0) or 0) / _nlic
                 lines.append(f"  {_nlic} x User / Voice Licence @ GBP {_per:,.2f}/mo each")
             if l == "Broadband" and bb_bill:
                 lines += bb_bill
+        if not any(x.startswith("Phone System / Hardware") for x in lines) and g.get("_tele_any"):
+            lines.insert(0, "Phone System / Hardware: no monthly charge")
+            lines.insert(1, "  " + _hw_sold_as())
     except Exception:
         lines = []
     try:
