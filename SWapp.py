@@ -1785,6 +1785,20 @@ def _split_contact(text):
     last = parts[-1] if parts else ""
     return first, last, pos.strip()
 
+def _sig_png_from_canvas(img_data):
+    """Canvas RGBA array -> PNG bytes on white, with the pad's pale-blue background turned white."""
+    from PIL import Image as _PILImage
+    sig_pil = _PILImage.fromarray(img_data.astype("uint8"), "RGBA")
+    _white = _PILImage.new("RGBA", sig_pil.size, (255, 255, 255, 255))
+    _white.paste(sig_pil, mask=sig_pil.split()[3])
+    _arr = np.array(_white.convert("RGB")).astype("int16")
+    _arr[np.abs(_arr - np.array([234, 244, 251])).max(axis=2) < 40] = 255
+    if (_arr < 200).sum() < 30:          # practically no ink
+        return None
+    buf = io.BytesIO()
+    _PILImage.fromarray(_arr.astype("uint8"), "RGB").save(buf, format="PNG")
+    return buf.getvalue()
+
 def zoho_order_data():
     """Everything the CRM function needs to open the account, the Legal Contract and the onboarding tickets.
     Read from the live quote (called from the Sign & Send tab, after every figure has been worked out)."""
@@ -1898,7 +1912,7 @@ def zoho_order_data():
                             f"{_aq.get('term')} months (Shire Leasing)")
     except Exception:
         pass
-    return {
+    return _flat_lines({
         "billing_notes": bill, "other_products": other,
         "company": str(G("q_comp_name") or "").strip(), "reg": str(G("q_comp_reg") or "").strip(),
         "address": str(G("q_address") or "").strip(), "phone": str(G("q_phone") or "").strip(),
@@ -1911,7 +1925,18 @@ def zoho_order_data():
         "monthly_lines": lines, "call_scope": bool(g.get("cs_active")), "air_con": bool(g.get("ac_active")),
         "consultant": _prepared_by(), "consultant_email": str(_cu.get("email") or ""),
         "lead_id": str(G("q_zl_id") or "") if G("q_zl_type") == "Lead" else "",
-    }
+    })
+
+def _flat_lines(v):
+    """No line breaks inside the order data (a multi-line address becomes 'line 1, line 2'), so the
+    JSON on the deal note stays one clean line for the CRM function."""
+    import re as _re
+    if isinstance(v, dict): return {k: _flat_lines(x) for k, x in v.items()}
+    if isinstance(v, list): return [_flat_lines(x) for x in v]
+    if isinstance(v, str):
+        lead = v[:len(v) - len(v.lstrip(" "))]   # keep the "  " indent the tickets use for sub-lines
+        return lead + _re.sub(r"\s*[\r\n]+\s*", ", ", v.strip()).strip(", ")
+    return v
 
 def _zoho_deal_description(d):
     """Readable order summary for the deal, with the machine-readable copy on the last line."""
@@ -2154,9 +2179,11 @@ ZOHO_SIGNED_FN = r'''string standalone.__FN__(String request_id)
 	if(data_src.contains("SYCDATA:"))
 	{
 		raw = data_src.subString(data_src.indexOf("SYCDATA:") + 8);
-		if(raw.contains("\n"))
+		// The data is the note's last line: keep everything up to the final closing brace
+		// (never cut at "\n" - an address with line breaks is stored as \n inside the JSON)
+		if(raw.contains("}"))
 		{
-			raw = raw.subString(0,raw.indexOf("\n"));
+			raw = raw.subString(0,raw.lastIndexOf("}") + 1);
 		}
 		data = raw.trim().toMap();
 	}
@@ -11327,7 +11354,20 @@ with tab6:
                         if st.button("↻ Pad looks blank? Reload it", key="btn_reload_pad"):
                             st.session_state["_cv_n"] = st.session_state.get("_cv_n", 0) + 1
                             st.rerun()
-                    # Explicit save button - more reliable than auto-detect
+                    # Auto-save: as soon as there is ink on the pad it is kept, so moving on to the next
+                    # step never loses it (a blank pad - e.g. after a reload - never overwrites a saved one)
+                    try:
+                        _strokes = len(((canvas_result.json_data or {}).get("objects") or [])) if canvas_result else 0
+                        _stamp = (st.session_state.get("_cv_n", 0), _strokes)
+                        if _strokes and canvas_result.image_data is not None \
+                                and st.session_state.get("_sig_strokes") != _stamp:
+                            _sb = _sig_png_from_canvas(canvas_result.image_data)
+                            if _sb:
+                                st.session_state["_sig_bytes"] = _sb
+                                st.session_state["_sig_strokes"] = _stamp
+                    except Exception:
+                        pass
+                    # Explicit save button still there for peace of mind
                     _btn_col, _clr_col = st.columns(2)
                     with _btn_col:
                         if st.button("✅ Save Signature", use_container_width=True,
@@ -11360,6 +11400,7 @@ with tab6:
                     with _clr_col:
                         if st.button("🗑️ Clear", use_container_width=True, key="btn_clr_sig"):
                             st.session_state.pop("_sig_bytes", None)
+                            st.session_state.pop("_sig_strokes", None)
                             st.rerun()
 
             sig_bytes = st.session_state.get("_sig_bytes")
@@ -11371,7 +11412,7 @@ with tab6:
                 except Exception:
                     pass
             else:
-                st.caption("✏️ Draw signature above then click Save Signature")
+                st.caption("✏️ Draw the signature above - it saves itself once there's ink on the pad")
 
 
             # Confirm name typed
