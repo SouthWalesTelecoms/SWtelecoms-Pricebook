@@ -11188,6 +11188,25 @@ if _show_dash:
                     _q = 0
                 if _q > 0 and float(_it.get("cost") or 0) > 0:
                     rows.append(("Air conditioning", _it["name"], _q, float(_it["cost"])))
+        # ---- Installation and other costs the company incurs on this deal (internal) ----
+        if rows or compute_install_cost() > 0:
+            if install_type == "Engineer Install" and compute_install_cost() > 0:
+                _d = max(1, int(install_days)); _tot = compute_install_cost()
+                rows.append(("Installation", f"Engineer installation ({_d} day{'s' if _d != 1 else ''})", _d, round(_tot / _d, 2)))
+            if termination_cost > 0:
+                rows.append(("Other costs", "Termination / buy-out costs", 1, float(termination_cost)))
+            for _xn, _xa in (extra_costs or []):
+                if float(_xa) > 0: rows.append(("Other costs", str(_xn), 1, float(_xa)))
+            try:
+                _acc = float((globals().get("AC") or {}).get("inst_cost", 0) or 0)
+            except Exception:
+                _acc = 0.0
+            if _acc > 0:
+                rows.append(("Installation", "Air conditioning installation (labour, materials, extras)", 1, _acc))
+            if not _maint_optout() and compute_hw_buy() > 0:
+                rows.append(("Allowance", "Annual hardware maintenance allowance (20% of hardware RRP)", 1, round(compute_hw_buy() * 1.5 * 0.2, 2)))
+            rows.append(("Allowance", "Fixed deal cost (built into the pricebook)", 1, 200.0))
+            rows.append(("Allowance", "Fixed deal cost (built into the pricebook)", 1, 400.0))
         pdf = FPDF(orientation="P", unit="mm", format="A4")
         pdf.set_auto_page_break(True, 15)
         pdf.add_page()
@@ -11197,7 +11216,7 @@ if _show_dash:
         except Exception:
             pass
         pdf.set_text_color(255, 255, 255); pdf.set_font("Helvetica", "B", 13)
-        pdf.set_xy(100, 8); pdf.cell(100, 6, "HARDWARE COST SHEET", align="R")
+        pdf.set_xy(100, 8); pdf.cell(100, 6, "DEAL COST SHEET", align="R")
         pdf.set_font("Helvetica", "", 8); pdf.set_xy(100, 15)
         pdf.cell(100, 5, "Internal - buy prices - not for customers", align="R")
         pdf.set_text_color(8, 31, 58); pdf.set_font("Helvetica", "B", 11); pdf.set_xy(10, 32)
@@ -11234,9 +11253,19 @@ if _show_dash:
             pdf.set_xy(10, y + 3); pdf.set_text_color(90, 90, 90)
             pdf.cell(190, 6, "No hardware has been added to this deal yet.")
         else:
-            pdf.set_font("Helvetica", "B", 10); pdf.set_text_color(8, 31, 58)
-            pdf.set_xy(10, y + 3); pdf.cell(162, 7, "TOTAL BUY PRICE (ex VAT)" if any(r[0] == "Air conditioning" for r in rows) else "TOTAL HARDWARE BUY PRICE (ex VAT)", align="R")
-            pdf.cell(28, 7, f"GBP {tot:,.2f}", align="R")
+            _hw = sum(r[2]*r[3] for r in rows if r[0] not in ("Installation", "Other costs", "Allowance"))
+            _ic = sum(r[2]*r[3] for r in rows if r[0] in ("Installation", "Other costs"))
+            _al = sum(r[2]*r[3] for r in rows if r[0] == "Allowance")
+            if y > 245:
+                pdf.add_page(); y = 15
+            y += 3
+            for _lbl, _v, _b in (("Hardware & equipment (to order)", _hw, False),
+                                 ("Installation & other costs", _ic, False),
+                                 ("TOTAL OUTLAY (ex VAT)", _hw + _ic, True),
+                                 ("Pricebook cost allowances (modelled, not ordered)", _al, False)):
+                pdf.set_font("Helvetica", "B" if _b else "", 10 if _b else 9); pdf.set_text_color(8, 31, 58)
+                pdf.set_xy(10, y); pdf.cell(162, 6.5, _lbl, align="R")
+                pdf.cell(28, 6.5, f"GBP {_v:,.2f}", align="R"); y += 6.5
         return bytes(pdf.output())
 
     if st.session_state.admin_unlocked:
@@ -11266,7 +11295,7 @@ if _show_dash:
                 st.download_button("📥 Download cost sheet", data=build_cost_sheet_pdf(),
                                    file_name=f"HW_Cost_Sheet_{safe}_{date.today()}.pdf", mime="application/pdf",
                                    use_container_width=True, key="dl_cost_sheet",
-                                   help="Every hardware line with its buy price - for ordering. Internal only.")
+                                   help="Hardware buy prices plus installation and other incurred costs - for ordering. Internal only.")
             except Exception as _cse2:
                 st.caption(f"Cost sheet unavailable: {_cse2}")
         with fi3:
