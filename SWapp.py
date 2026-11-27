@@ -1314,7 +1314,7 @@ def _lk(v, key="name"):
 
 def zoho_search_deals(text):
     """Deals whose details match the text -> list of dicts. Each shows the customer (the deal's Account) and the deal name."""
-    j = _zoho_get("Deals/search", {"word": text, "per_page": 10})
+    j = _zoho_get("Deals/search", {"word": text, "per_page": 30})
     if j.get("code") and "data" not in j:
         raise RuntimeError(f"Zoho: {j.get('message') or j.get('code')}")
     out = []
@@ -1323,6 +1323,8 @@ def zoho_search_deals(text):
         r["_deal_name"] = str(r.get("Deal_Name") or "")
         r["_acct_id"] = _lk(r.get("Account_Name"), "id")
         r["_stage"] = str(r.get("Stage") or "")
+        r["_owner"] = _lk(r.get("Owner"))
+        r["_created"] = str(r.get("Created_Time") or "")[:10]
         r["Account_Name"] = _lk(r.get("Account_Name")) or r["_deal_name"]
         r["Billing_City"] = ""
         out.append(r)
@@ -1380,6 +1382,18 @@ def zoho_search_all(text):
     except Exception as e:
         notes.append(f"Deals couldn't be searched ({e})")
     return res, " ".join(notes)
+
+def zoho_rank(results, text):
+    """Deals first (live ones, newest first, best name match first), then accounts, then leads - so the right deal is at the top."""
+    t = (text or "").strip().lower()
+    def _dead(r): return bool(re.search(r"lost|dead|cancel", str(r.get("_stage") or ""), re.I))
+    def _key(r):
+        nm = str(r.get("Account_Name") or "").lower()
+        kind = {"Deal": 0, "Account": 1, "Lead": 2}.get(r.get("_type"), 3)
+        match = 0 if nm == t else 1 if nm.startswith(t) else 2
+        created = str(r.get("_created") or "")
+        return (kind, 1 if _dead(r) else 0, match, "".join(chr(255 - ord(c)) if c.isdigit() else c for c in created))
+    return sorted(results, key=_key)
 
 def zoho_load_lead(lead_id):
     """Full Lead record, reshaped so it fills the quote like an Account does. The lead itself is the contact."""
@@ -3026,14 +3040,30 @@ with st.sidebar:
                         "Please ask an admin to make a new one in the Admin panel (Zoho connection) using the scope ZohoCRM.modules.READ,ZohoCRM.settings.READ." if "scope" in _zm.lower() else f"Couldn't reach Zoho: {_zm}")
             if st.session_state.get("_zoho_msg"):
                 st.caption(st.session_state["_zoho_msg"])
-            _zres = st.session_state.get("_zoho_results") or []
+            _zall = zoho_rank(st.session_state.get("_zoho_results") or [], st.session_state.get("_zoho_q", ""))
+            _zres = _zall
+            if _zall:
+                _zshow_all = st.checkbox("Also show accounts and leads (not deals)", key="_zoho_showall",
+                                         help="The automations (convert the deal, create the account, Legal Contracts, onboarding tickets) start from a DEAL. "
+                                              "Pick the deal unless this customer genuinely has no deal in Zoho.")
+                _zres = _zall if _zshow_all else [r for r in _zall if r.get("_type") == "Deal"]
+                _nhid = len(_zall) - len(_zres)
+                if not _zres:
+                    st.warning("No DEAL found for that name. Check the spelling, or tick 'Also show accounts and leads' to see non-deal records.")
+                elif _nhid:
+                    st.caption(f"Showing deals only - {_nhid} account/lead match(es) hidden.")
+            def _zlabel(r):
+                if r.get("_type") == "Deal":
+                    _dead = bool(re.search(r"lost|dead|cancel", str(r.get("_stage") or ""), re.I))
+                    return (("❌ " if _dead else "🟢 ") + f"{r.get('Account_Name', '?')} - {r.get('_deal_name') or '-'}"
+                            + (f" - {r.get('_stage')}" if r.get("_stage") else "")
+                            + (f" - {r.get('_owner')}" if r.get("_owner") else "")
+                            + (f" - created {r.get('_created')}" if r.get("_created") else ""))
+                return (f"⚠️ NOT A DEAL ({r.get('_type', 'Account')}) - {r.get('Account_Name', '?')}"
+                        + (f" - {r.get('Billing_City')}" if r.get("Billing_City") else ""))
             if _zres:
-                _zi = st.selectbox("Matches", range(len(_zres)), key="_zoho_pick",
-                                   format_func=lambda i: (f"{_zres[i].get('Account_Name', '?')} [Deal: {_zres[i].get('_deal_name') or '-'}"
-                                                          + (f" - {_zres[i].get('_stage')}" if _zres[i].get("_stage") else "") + "]")
-                                                         if _zres[i].get("_type") == "Deal" else
-                                                         (f"{_zres[i].get('Account_Name', '?')} [{_zres[i].get('_type', 'Account')}]"
-                                                          + (f" - {_zres[i].get('Billing_City')}" if _zres[i].get("Billing_City") else "")))
+                _zi = st.selectbox("Matches - pick the DEAL (🟢 = live deal)", range(len(_zres)), key="_zoho_pick",
+                                   format_func=lambda i: _zlabel(_zres[i]))
                 _za = _zres[_zi]
                 _cache = st.session_state.setdefault("_zoho_cache", {})
                 if _za["id"] not in _cache:
@@ -3048,6 +3078,9 @@ with st.sidebar:
                 _zc = None
                 _is_lead = _za.get("_type") == "Lead"
                 _is_deal = _za.get("_type") == "Deal"
+                if not _is_deal:
+                    st.warning("⚠️ This is " + ("a lead" if _is_lead else "an account") + ", not a deal. Quote from a DEAL if there is one - "
+                               "that is what lets the signed paperwork convert the deal and set it up automatically.")
                 if _is_deal:
                     _dw, _di = zoho_deal_info(_zrec)
                     if _dw: st.warning(_dw)
