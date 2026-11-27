@@ -490,8 +490,8 @@ def _default_config():
         "headsets": [
             {"name": "Poly Blackwire 3210 (Mono, Wired)",   "buy": 19.54},
             {"name": "Poly Blackwire 3220 (Stereo, Wired)", "buy": 29.31},
-            {"name": "Yealink WH62 (Mono, Wireless)",       "buy": 97.39},
-            {"name": "Yealink WH62 (Stereo, Wireless)",     "buy": 115.99},
+            {"name": "Yealink WH64 (Mono, Wireless)",       "buy": 99.99},
+            {"name": "Yealink WH64 (Stereo, Wireless)",     "buy": 115.99},
         ],
         "other_hardware": [
             {"name": "GWN7660 WiFi AP (WiFi6)",      "buy": 58.00},
@@ -916,8 +916,8 @@ PRODUCT_IMAGES = {
     "Grandstream DP752 (Base)": "images/dp752.jpg",
     "Poly Blackwire 3210 (Mono, Wired)":   "images/poly_bw3210.jpg",
     "Poly Blackwire 3220 (Stereo, Wired)": "images/poly_bw3220.jpg",
-    "Yealink WH62 (Mono, Wireless)":       "images/yealink_wh62_mono.jpg",
-    "Yealink WH62 (Stereo, Wireless)":     "images/yealink_wh62_stereo.jpg",
+    "Yealink WH64 (Mono, Wireless)":       "images/yealink_WH64_mono.jpg",
+    "Yealink WH64 (Stereo, Wireless)":     "images/yealink_WH64_stereo.jpg",
 }
 
 PRODUCT_ICONS = {
